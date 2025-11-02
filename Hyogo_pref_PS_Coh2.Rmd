@@ -1,0 +1,115 @@
+---
+title: "Power Spectrum and Coherence Graphs of Hyogo Prefecture's Leading, Coincident, and Lagging CI Indices"
+author: "N.Toyohara"
+date: ""
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+```
+
+
+```{r no1, echo=FALSE, include=FALSE}
+
+library(dplyr)
+library(openxlsx) 
+library(ggplot2) 
+library(WaveletComp) 
+
+##################
+filnam<-"hyogo_pref_ci_lead_coin_lag.xlsx"
+endterm<-"2025-07-01"
+ x00<-read.xlsx(filnam,sheet="index",colNames=TRUE,skipEmptyRows = FALSE)
+tmx<- seq(as.Date("1994-01-01"), by = "month", length.out = length(x00$X1))
+
+df0<-data.frame(date=tmx,lead=x00$lead,coin=x00$coin,lag=x00$lag)
+
+#df0<-df0 %>% filter(date >= as.Date("2018-01-01"))
+#Uncomment the above line when analyzing from January 2018.
+
+library(Hmisc)
+label(df0$lead) <- "Hyogo_pref CI_leading index"
+label(df0$coin) <- "Hyogo_pref CI_coincident index"
+label(df0$lag) <- "Hyogo_pref CI_lag index"
+
+```
+In the following section, we plot the power spectra of the three indices.
+```{r no2, echo=FALSE}
+
+for (iname in c("lead","coin","lag")){
+
+  sink("nul")
+  my.w <- analyze.wavelet(df0,iname,
+loess.span = 0,
+dt = 1, dj = 1/12,
+lowerPeriod = 8, upperPeriod = 64,
+make.pval = TRUE, n.sim = 100)
+sink()
+
+wt.image(my.w, color.key = "quantile", n.levels = 250,
+legend.params = list(lab = "wavelet power levels"),
+periodlab = paste("period (month)"),
+show.date = T, date.format = "%F", 
+main=paste("Wavelet analysis;",label(df0[[iname]]))
+)
+}
+```
+
+In the following section, we plot the Coherence of CI_lead and CI_coincident indices,  CI_lead and CI_lagged  indices, and  CI_coin and CI_lagged.
+
+```{r no3, echo=FALSE}
+my.coherency<-function(v1,v2){
+sink("nul")
+WC <- analyze.coherency(
+  df0,
+  my.pair = c(v1,v2),
+  loess.span = 0,#no detrending; because of  business cycle indices
+  dt = 1,
+  dj = 1/20,
+  window.size.t = 5,
+  window.size.s = .5,
+  lowerPeriod = 2,
+  upperPeriod = 64,
+  make.pval = TRUE,
+  n.sim = 100
+)
+sink()
+
+wc.image(
+  WC,
+  which.image = "wc",
+  color.key = "interval",
+  n.levels = 200,
+  plot.coi = TRUE,
+  plot.contour = TRUE,
+  siglvl.contour = 0.1,
+  plot.arrow = TRUE,
+  col.arrow = "black",
+    use.sAngle = TRUE,
+  exponent = 0.7,
+  legend.params = list(
+    lab = "Wavelet Coherence",
+    lab.line = 3.5,
+    width = 1.2,
+    shrink = 0.9
+  ),
+  show.date = TRUE,
+  date.format = "%Y",
+  timelab = "calendar date",
+  periodlab = "period (months)",
+  main = paste("Wavelet Coherence Spectrum (",v1," vs ",v2,")"),
+  lwd = 2
+)
+wc.phasediff.image(WC,main=paste("phase differences of periodic components,(",v1," vs ",v2,")"))
+
+wc.sel.phases(WC,main=paste("phases for selected periodic components (",v1," vs ",v2,")"))
+}
+
+my.coherency("lead","coin")
+my.coherency("lead","lag")
+my.coherency("coin","lag")
+
+
+
+```
