@@ -1,0 +1,149 @@
+---
+title: "3D Wavelet Coherence with Date Axis, COI, and Band Highlight"
+author: "ChatGPT"
+date: "`r Sys.Date()`"
+output: html_document
+---
+```{r setup, include=FALSE}
+library(flexdashboard)
+```
+
+
+```{r coherence_3D_full, message=FALSE, warning=FALSE}
+library(WaveletComp)
+library(openxlsx)
+library(rgl)
+library(lubridate)
+
+# --- Load data ---
+filnam <- "C:/docu/25_論文/hyogo/lead_coin_lag.xlsx"
+x00 <- read.xlsx(filnam, sheet = "index", colNames = TRUE)
+tmx <- seq(as.Date("1994-01-01"), by = "month", length.out = length(x00$X1))
+df0 <- data.frame(date = tmx, lead = x00$lead, coin = x00$coin)
+
+```
+
+
+```{r 2d, echo=FALSE}
+# --- Wavelet coherency analysis ---
+sink("nul")
+WC <- analyze.coherency(
+  df0,
+  my.pair = c("lead", "coin"),
+  loess.span = 0.02,
+  dt = 1,
+  dj = 1/20,
+  window.size.t = 5,
+  window.size.s = 1,
+  lowerPeriod = 2,
+  upperPeriod = 64,
+  make.pval = TRUE,
+  n.sim = 100
+)
+sink()
+
+
+# --- 改良版の描画 ---
+n_label<-"(CI_先行指数 vs CI_一致指数)"
+wc.image(
+  WC,
+  which.image = "wc",
+  color.key = "interval",
+  n.levels = 200,
+#  color.palette = "hcl.colors(n.levels, 'RdYlBu', rev=TRUE)",
+  plot.coi = TRUE,
+  plot.contour = TRUE,
+  siglvl.contour = 0.1,
+  plot.arrow = TRUE,
+  col.arrow = "black",        # ✅ 矢印の色（arrow.col ではない）
+  use.sAngle = TRUE,          # ✅ 矢印を平滑化
+  exponent = 0.7,
+  legend.params = list(
+    lab = "Wavelet Coherence",
+    lab.line = 3.5,
+    width = 1.2,
+    shrink = 0.9
+  ),
+  show.date = TRUE,
+  date.format = "%Y",
+  timelab = "calendar date",
+  periodlab = "period (months)",
+  main = paste("コヒーレンス スペクトラム",n_label),
+  lwd = 2
+)
+```
+
+```{r 3d, echo=FALSE}
+
+# --- Prepare axes and matrix ---
+library(rgl)
+library(WaveletComp)
+
+# --- データ準備 ---
+coh_mat  <- WC$Coherence
+periods  <- WC$Period
+time_vec <- as.numeric(format(tmx, "%Y")) + (as.numeric(format(tmx, "%m")) - 1) / 12
+
+# --- メッシュ生成 ---
+x_mat <- matrix(rep(time_vec, each = length(periods)), nrow = length(periods))
+y_mat <- matrix(rep(periods, times = length(time_vec)), nrow = length(periods))
+z_mat <- coh_mat
+
+# --- カラーマップ設定（wc.image と同じ） ---
+n.levels <- 200
+col_fun  <- colorRampPalette(hcl.colors(n.levels, "RdYlBu", rev = TRUE))
+cols <- col_fun(n.levels)
+z_norm <- (z_mat - min(z_mat, na.rm = TRUE)) / (max(z_mat, na.rm = TRUE) - min(z_mat, na.rm = TRUE))
+col_index <- pmin(pmax(floor(z_norm * (n.levels - 1)) + 1, 1), n.levels)
+col_surface <- cols[col_index]
+
+# --- 3D描画 ---
+open3d()
+bg3d("white")
+
+surface3d(
+  x = x_mat,
+  y = y_mat,
+  z = z_mat * 100,
+  color = col_surface,
+  back = "fill",
+  specular = "black",
+  ambient = "white",
+  lit = FALSE
+)
+
+# --- 軸タイトル ---
+title3d(
+  xlab = "Time (Year)",
+  ylab = "Period (months)",
+  zlab = "Coherence",
+  line = 2,
+  main = paste("Hyogo CI;lead-coin;Wavelet PowerSpectrum")
+   )
+
+# --- X軸を1995年から5年ごとに設定 ---
+year_ticks <- seq(1995, 2025, by = 5)
+rgl::axis3d('x', at = year_ticks, labels = as.character(year_ticks), cex = 0.9, lwd = 1.5)
+
+# --- その他の軸設定 ---
+axes3d(edges = c("y--", "z--"))
+
+# --- 見やすい比率と視点 ---
+aspect3d(8, 6, 6)
+view3d(theta = 0, phi = -45, zoom = 1)
+# --- Optionally save ---
+ library(htmlwidgets)
+ rglwidget() %>% saveWidget("coherence_3D_full.html")
+iname0<-"lead-coin"
+flnam3=paste("C:/docu/25_論文/hyogo/",iname0,"_coh3d.html")
+# そのままHTMLファイルに保存
+htmlwidgets::saveWidget(
+  rglwidget(),                               # 現在のrglシーンをHTML化
+  file = flnam3,  # 保存先
+  selfcontained = TRUE                       # 必要なjs/CSSを同梱
+)
+
+
+
+```
+
