@@ -1,0 +1,109 @@
+---
+title: "3D Wavelet Coherence with Date Axis, COI, and Band Highlight"
+author: "N.Toyohara"
+date: ""
+output: html_document
+---
+```{r setup, include=FALSE}
+library(flexdashboard)
+```
+
+
+```{r coherence_3D_full, include=FALSE, echo=FALSE}
+library(WaveletComp)
+library(openxlsx)
+library(rgl)
+library(lubridate)
+
+# --- Load data ---
+filnam<-"hyogo_pref_ci_lead_coin_lag.xlsx"
+x00 <- read.xlsx(filnam, sheet = "index", colNames = TRUE)
+tmx <- seq(as.Date("1994-01-01"), by = "month", length.out = length(x00$X1))
+df0 <- data.frame(date = tmx, lead = x00$lead, coin = x00$coin, lag = x00$lag)
+
+```
+
+
+```{r 3d, echo=FALSE}
+# --- Wavelet coherency analysis ---
+my.3d_coh<-function(v1,v2){
+
+sink("nul")
+WC <- analyze.coherency(
+  df0,
+  my.pair = c(v1, v2),
+  loess.span = 0.02,
+  dt = 1,
+  dj = 1/20,
+  window.size.t = 5,
+  window.size.s = 1,
+  lowerPeriod = 2,
+  upperPeriod = 64,
+  make.pval = TRUE,
+  n.sim = 100
+)
+sink()
+
+iname0<-paste(v1,"-",v2)
+
+coh_mat  <- WC$Coherence
+periods  <- WC$Period
+time_vec <- as.numeric(format(tmx, "%Y")) + (as.numeric(format(tmx, "%m")) - 1) / 12
+
+x_mat <- matrix(rep(time_vec, each = length(periods)), nrow = length(periods))
+y_mat <- matrix(rep(periods, times = length(time_vec)), nrow = length(periods))
+z_mat <- coh_mat
+
+n.levels <- 200
+col_fun  <- colorRampPalette(hcl.colors(n.levels, "RdYlBu", rev = TRUE))
+cols <- col_fun(n.levels)
+z_norm <- (z_mat - min(z_mat, na.rm = TRUE)) / (max(z_mat, na.rm = TRUE) - min(z_mat, na.rm = TRUE))
+col_index <- pmin(pmax(floor(z_norm * (n.levels - 1)) + 1, 1), n.levels)
+col_surface <- cols[col_index]
+
+open3d()
+bg3d("white")
+
+surface3d(
+  x = x_mat,
+  y = y_mat,
+  z = z_mat * 100,
+  color = col_surface,
+  back = "fill",
+  specular = "black",
+  ambient = "white",
+  lit = FALSE
+)
+
+title3d(
+  xlab = "Time (Year)",
+  ylab = "Period (months)",
+  zlab = "Coherence",
+  line = 2,
+  main = paste("Hyogo CI;",iname0,";Wavelet PowerSpectrum")
+   )
+
+# X-axis starting from 1995 in 5-year intervals
+year_ticks <- seq(1995, 2025, by = 5)
+rgl::axis3d('x', at = year_ticks, labels = as.character(year_ticks), cex = 0.9, lwd = 1.5)
+
+axes3d(edges = c("y--", "z--"))
+
+# --- An easily readable aspect ratio and viewpoint ---
+aspect3d(8, 6, 6)
+view3d(theta = 0, phi = -45, zoom = 1)
+
+# --- Optionally save ---
+ library(htmlwidgets)
+ flnam3=paste(iname0,"_coh3d.html")
+ rglwidget() %>% saveWidget(flnam3)
+
+}
+
+my.3d_coh("lead","coin")
+my.3d_coh("lead","lag")
+my.3d_coh("coin","lag")
+
+
+```
+
